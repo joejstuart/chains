@@ -21,7 +21,6 @@ import (
 	intoto "github.com/in-toto/in-toto-golang/in_toto"
 	slsa "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v1"
 	"github.com/tektoncd/chains/pkg/chains/formats/slsa/extract"
-	resolveddependencies "github.com/tektoncd/chains/pkg/chains/formats/slsa/v2alpha2/internal/resolved_dependencies"
 	"github.com/tektoncd/chains/pkg/chains/objects"
 )
 
@@ -31,13 +30,17 @@ const (
 	JsonMediaType = "application/json"
 )
 
+type BuildDefintion interface {
+	GenerateBuildDefinition(context.Context, *objects.PipelineRunObject) (slsa.ProvenanceBuildDefinition, error)
+}
+
 // GenerateAttestation generates a provenance statement with SLSA v1.0 predicate for a pipeline run.
-func GenerateAttestation(ctx context.Context, builderID string, pro *objects.PipelineRunObject) (interface{}, error) {
-	rd, err := resolveddependencies.PipelineRun(ctx, pro)
+func GenerateAttestation(ctx context.Context, builderID string, pro *objects.PipelineRunObject, bd BuildDefintion) (interface{}, error) {
+	bp, err := byproducts(pro)
 	if err != nil {
 		return nil, err
 	}
-	bp, err := byproducts(pro)
+	generatedBd, err := bd.GenerateBuildDefinition(ctx, pro)
 	if err != nil {
 		return nil, err
 	}
@@ -48,12 +51,7 @@ func GenerateAttestation(ctx context.Context, builderID string, pro *objects.Pip
 			Subject:       extract.SubjectDigests(ctx, pro),
 		},
 		Predicate: slsa.ProvenancePredicate{
-			BuildDefinition: slsa.ProvenanceBuildDefinition{
-				BuildType:            "https://tekton.dev/chains/v2/slsa",
-				ExternalParameters:   externalParameters(pro),
-				InternalParameters:   internalParameters(pro),
-				ResolvedDependencies: rd,
-			},
+			BuildDefinition: generatedBd,
 			RunDetails: slsa.ProvenanceRunDetails{
 				Builder: slsa.Builder{
 					ID: builderID,
@@ -79,46 +77,6 @@ func metadata(pro *objects.PipelineRunObject) slsa.BuildMetadata {
 		m.FinishedOn = &utc
 	}
 	return m
-}
-
-// internalParameters adds the tekton feature flags that were enabled
-// for the pipelinerun.
-func internalParameters(pro *objects.PipelineRunObject) map[string]any {
-	internalParams := make(map[string]any)
-	if pro.Status.Provenance != nil && pro.Status.Provenance.FeatureFlags != nil {
-		internalParams["tekton-pipelines-feature-flags"] = *pro.Status.Provenance.FeatureFlags
-	}
-	return internalParams
-}
-
-// externalParameters adds the pipeline run spec
-func externalParameters(pro *objects.PipelineRunObject) map[string]any {
-	externalParams := make(map[string]any)
-
-	// add the origin of top level pipeline config
-	// isRemotePipeline checks if the pipeline was fetched using a remote resolver
-	isRemotePipeline := false
-	if pro.Spec.PipelineRef != nil {
-		if pro.Spec.PipelineRef.Resolver != "" && pro.Spec.PipelineRef.Resolver != "Cluster" {
-			isRemotePipeline = true
-		}
-	}
-
-	if p := pro.Status.Provenance; p != nil && p.RefSource != nil && isRemotePipeline {
-		ref := ""
-		for alg, hex := range p.RefSource.Digest {
-			ref = fmt.Sprintf("%s:%s", alg, hex)
-			break
-		}
-		buildConfigSource := map[string]string{
-			"ref":        ref,
-			"repository": p.RefSource.URI,
-			"path":       p.RefSource.EntryPoint,
-		}
-		externalParams["buildConfigSource"] = buildConfigSource
-	}
-	externalParams["runSpec"] = pro.Spec
-	return externalParams
 }
 
 // byproducts contains the pipelineRunResults
