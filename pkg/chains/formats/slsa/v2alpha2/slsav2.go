@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	"github.com/tektoncd/chains/pkg/chains/formats"
-	builddefinitions "github.com/tektoncd/chains/pkg/chains/formats/slsa/v2alpha2/internal/build_definitions"
 	"github.com/tektoncd/chains/pkg/chains/formats/slsa/v2alpha2/internal/pipelinerun"
 	"github.com/tektoncd/chains/pkg/chains/formats/slsa/v2alpha2/internal/taskrun"
 	"github.com/tektoncd/chains/pkg/chains/objects"
@@ -38,11 +37,13 @@ func init() {
 
 type Slsa struct {
 	builderID string
+	buildType string
 }
 
 func NewFormatter(cfg config.Config) (formats.Payloader, error) {
 	return &Slsa{
 		builderID: cfg.Builder.ID,
+		buildType: cfg.BuildType.Type,
 	}, nil
 }
 
@@ -51,14 +52,11 @@ func (s *Slsa) Wrap() bool {
 }
 
 func (s *Slsa) CreatePayload(ctx context.Context, obj interface{}) (interface{}, error) {
-	genericBd := builddefinitions.GenericBuildDefinition{
-		BuildType: "https://tekton.dev/chains/v2/slsa",
-	}
 	switch v := obj.(type) {
 	case *objects.TaskRunObject:
-		return taskrun.GenerateAttestation(ctx, s.builderID, v)
+		return taskrun.GenerateAttestation(ctx, s.builderID, v, s.buildType)
 	case *objects.PipelineRunObject:
-		return pipelinerun.GenerateAttestation(ctx, s.builderID, v, genericBd)
+		return pipelinerun.GenerateAttestation(ctx, s.builderID, v, s.buildType)
 	default:
 		return nil, fmt.Errorf("intoto does not support type: %s", v)
 	}

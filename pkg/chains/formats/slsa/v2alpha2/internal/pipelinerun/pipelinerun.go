@@ -20,7 +20,9 @@ import (
 
 	intoto "github.com/in-toto/in-toto-golang/in_toto"
 	slsa "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v1"
+	v1 "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v1"
 	"github.com/tektoncd/chains/pkg/chains/formats/slsa/extract"
+	builddefinitions "github.com/tektoncd/chains/pkg/chains/formats/slsa/v2alpha2/internal/build_definitions"
 	"github.com/tektoncd/chains/pkg/chains/objects"
 )
 
@@ -31,19 +33,28 @@ const (
 )
 
 type BuildDefintion interface {
-	GenerateBuildDefinition(context.Context, *objects.PipelineRunObject) (slsa.ProvenanceBuildDefinition, error)
+	ExternalParameters() map[string]any
+	InternalParameters() map[string]any
+	ResolvedDependencies(context.Context) ([]v1.ResourceDescriptor, error)
 }
 
 // GenerateAttestation generates a provenance statement with SLSA v1.0 predicate for a pipeline run.
-func GenerateAttestation(ctx context.Context, builderID string, pro *objects.PipelineRunObject, bd BuildDefintion) (interface{}, error) {
+func GenerateAttestation(ctx context.Context, builderID string, pro *objects.PipelineRunObject, buildType string) (interface{}, error) {
 	bp, err := byproducts(pro)
 	if err != nil {
 		return nil, err
 	}
-	generatedBd, err := bd.GenerateBuildDefinition(ctx, pro)
+
+	bd, err := getBuildDefinition(buildType, pro)
 	if err != nil {
 		return nil, err
 	}
+
+	rd, err := bd.ResolvedDependencies(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	att := intoto.ProvenanceStatementSLSA1{
 		StatementHeader: intoto.StatementHeader{
 			Type:          intoto.StatementInTotoV01,
@@ -51,7 +62,12 @@ func GenerateAttestation(ctx context.Context, builderID string, pro *objects.Pip
 			Subject:       extract.SubjectDigests(ctx, pro),
 		},
 		Predicate: slsa.ProvenancePredicate{
-			BuildDefinition: generatedBd,
+			BuildDefinition: slsa.ProvenanceBuildDefinition{
+				BuildType:            buildType,
+				ExternalParameters:   bd.ExternalParameters(),
+				InternalParameters:   bd.InternalParameters(),
+				ResolvedDependencies: rd,
+			},
 			RunDetails: slsa.ProvenanceRunDetails{
 				Builder: slsa.Builder{
 					ID: builderID,
@@ -95,4 +111,21 @@ func byproducts(pro *objects.PipelineRunObject) ([]slsa.ResourceDescriptor, erro
 		byProd = append(byProd, bp)
 	}
 	return byProd, nil
+}
+
+func getBuildDefinition(buildType string, pro *objects.PipelineRunObject) (BuildDefintion, error) {
+	switch buildType {
+	case "https://tekton.dev/chains/v2/slsa":
+		return builddefinitions.SLSAPipelineBuildType{
+			BuildType: buildType,
+			Pro:       pro,
+		}, nil
+	case "tekton-build-type":
+		return builddefinitions.TektonPipelineBuildType{
+			BuildType: buildType,
+			Pro:       pro,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported buildType %v", buildType)
+	}
 }

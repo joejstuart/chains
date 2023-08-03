@@ -308,7 +308,7 @@ func TestTaskRunGenerateAttestation(t *testing.T) {
 		},
 	}
 
-	got, err := GenerateAttestation(ctx, "test_builder-1", objects.NewTaskRunObject(tr))
+	got, err := GenerateAttestation(ctx, "test_builder-1", objects.NewTaskRunObject(tr), "https://tekton.dev/chains/v2/slsa")
 
 	if err != nil {
 		t.Errorf("unwant error: %s", err.Error())

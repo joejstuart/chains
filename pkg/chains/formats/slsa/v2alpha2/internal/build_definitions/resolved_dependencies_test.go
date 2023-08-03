@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package resolveddependencies
+package builddefinitions
 
 import (
 	"strings"
@@ -255,7 +255,8 @@ func TestTaskRun(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := logtesting.TestContextWithLogger(t)
-			rd, err := TaskRun(ctx, objects.NewTaskRunObject(tc.taskRun))
+			bd := SLSATaskBuildType{BuildType: "slsa-build", Tro: objects.NewTaskRunObject(tc.taskRun)}
+			rd, err := bd.ResolvedDependencies(ctx)
 			if err != nil {
 				t.Fatalf("Did not expect an error but got %v", err)
 			}
@@ -503,7 +504,8 @@ func TestPipelineRun(t *testing.T) {
 		{Name: "inputs/result", URI: "git+https://git.test.com.git", Digest: common.DigestSet{"sha1": "abcd"}},
 	}
 	ctx := logtesting.TestContextWithLogger(t)
-	got, err := PipelineRun(ctx, pro)
+	bd := SLSAPipelineBuildType{BuildType: "slsa-build", Pro: pro}
+	got, err := bd.ResolvedDependencies(ctx)
 	if err != nil {
 		t.Error(err)
 	}
@@ -538,7 +540,8 @@ func TestPipelineRunStructuredResult(t *testing.T) {
 		},
 	}
 	ctx := logtesting.TestContextWithLogger(t)
-	got, err := PipelineRun(ctx, proStructuredResults)
+	bd := SLSAPipelineBuildType{BuildType: "slsa-build", Pro: proStructuredResults}
+	got, err := bd.ResolvedDependencies(ctx)
 	if err != nil {
 		t.Errorf("error while extracting resolvedDependencies: %v", err)
 	}

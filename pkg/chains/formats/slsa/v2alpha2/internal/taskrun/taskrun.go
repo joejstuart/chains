@@ -1,15 +1,15 @@
-/*
-Copyright 2023 The Tekton Authors
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-    http://www.apache.org/licenses/LICENSE-2.0
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+// /*
+// Copyright 2023 The Tekton Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//     http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// */
 
 package taskrun
 
@@ -20,24 +20,37 @@ import (
 
 	intoto "github.com/in-toto/in-toto-golang/in_toto"
 	slsa "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v1"
+	v1 "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v1"
 	"github.com/tektoncd/chains/pkg/chains/formats/slsa/extract"
+	builddefinitions "github.com/tektoncd/chains/pkg/chains/formats/slsa/v2alpha2/internal/build_definitions"
 	"github.com/tektoncd/chains/pkg/chains/formats/slsa/v2alpha2/internal/pipelinerun"
-	resolveddependencies "github.com/tektoncd/chains/pkg/chains/formats/slsa/v2alpha2/internal/resolved_dependencies"
 	"github.com/tektoncd/chains/pkg/chains/objects"
 )
 
 const taskRunResults = "taskRunResults/%s"
 
+type BuildDefintion interface {
+	ExternalParameters() map[string]any
+	InternalParameters() map[string]any
+	ResolvedDependencies(context.Context) ([]v1.ResourceDescriptor, error)
+}
+
 // GenerateAttestation generates a provenance statement with SLSA v1.0 predicate for a task run.
-func GenerateAttestation(ctx context.Context, builderID string, tro *objects.TaskRunObject) (interface{}, error) {
-	rd, err := resolveddependencies.TaskRun(ctx, tro)
-	if err != nil {
-		return nil, err
-	}
+func GenerateAttestation(ctx context.Context, builderID string, tro *objects.TaskRunObject, buildType string) (interface{}, error) {
 	bp, err := byproducts(tro)
 	if err != nil {
 		return nil, err
 	}
+
+	bd, err := getBuildDefinition(buildType, tro)
+	if err != nil {
+		return nil, err
+	}
+	rd, err := bd.ResolvedDependencies(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	att := intoto.ProvenanceStatementSLSA1{
 		StatementHeader: intoto.StatementHeader{
 			Type:          intoto.StatementInTotoV01,
@@ -46,9 +59,9 @@ func GenerateAttestation(ctx context.Context, builderID string, tro *objects.Tas
 		},
 		Predicate: slsa.ProvenancePredicate{
 			BuildDefinition: slsa.ProvenanceBuildDefinition{
-				BuildType:            "https://tekton.dev/chains/v2/slsa",
-				ExternalParameters:   externalParameters(tro),
-				InternalParameters:   internalParameters(tro),
+				BuildType:            buildType,
+				ExternalParameters:   bd.ExternalParameters(),
+				InternalParameters:   bd.InternalParameters(),
 				ResolvedDependencies: rd,
 			},
 			RunDetails: slsa.ProvenanceRunDetails{
@@ -132,4 +145,21 @@ func byproducts(tro *objects.TaskRunObject) ([]slsa.ResourceDescriptor, error) {
 		byProd = append(byProd, bp)
 	}
 	return byProd, nil
+}
+
+func getBuildDefinition(buildType string, tro *objects.TaskRunObject) (BuildDefintion, error) {
+	switch buildType {
+	case "https://tekton.dev/chains/v2/slsa":
+		return builddefinitions.SLSATaskBuildType{
+			BuildType: buildType,
+			Tro:       tro,
+		}, nil
+	case "tekton-build-type":
+		return builddefinitions.TektonTaskBuildType{
+			BuildType: buildType,
+			Tro:       tro,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported buildType %v", buildType)
+	}
 }

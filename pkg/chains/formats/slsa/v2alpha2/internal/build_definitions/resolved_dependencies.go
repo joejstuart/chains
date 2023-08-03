@@ -14,10 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package resolveddependencies
+package builddefinitions
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"encoding/json"
 
 	"github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/common"
@@ -42,12 +44,12 @@ const (
 )
 
 // TaskRun constructs `predicate.resolvedDependencies` section by collecting all the artifacts that influence a taskrun such as source code repo and step&sidecar base images.
-func TaskRun(ctx context.Context, tro *objects.TaskRunObject) ([]v1.ResourceDescriptor, error) {
+func (s SLSATaskBuildType) ResolvedDependencies(ctx context.Context) ([]v1.ResourceDescriptor, error) {
 	var resolvedDependencies []v1.ResourceDescriptor
 	var err error
 
 	// add top level task config
-	if p := tro.Status.Provenance; p != nil && p.RefSource != nil {
+	if p := s.Tro.Status.Provenance; p != nil && p.RefSource != nil {
 		rd := v1.ResourceDescriptor{
 			Name:   taskConfigName,
 			URI:    p.RefSource.URI,
@@ -59,24 +61,24 @@ func TaskRun(ctx context.Context, tro *objects.TaskRunObject) ([]v1.ResourceDesc
 	mats := []common.ProvenanceMaterial{}
 
 	// add step and sidecar images
-	stepMaterials, err := material.FromStepImages(tro.Status.Steps)
+	stepMaterials, err := material.FromStepImages(s.Tro.Status.Steps)
 	mats = append(mats, stepMaterials...)
 	if err != nil {
 		return nil, err
 	}
-	sidecarMaterials, err := material.FromSidecarImages(tro.Status.Sidecars)
+	sidecarMaterials, err := material.FromSidecarImages(s.Tro.Status.Sidecars)
 	if err != nil {
 		return nil, err
 	}
 	mats = append(mats, sidecarMaterials...)
 	resolvedDependencies = append(resolvedDependencies, convertMaterialsToResolvedDependencies(mats, "")...)
 
-	mats = material.FromTaskParamsAndResults(ctx, tro)
+	mats = material.FromTaskParamsAndResults(ctx, s.Tro)
 	// convert materials to resolved dependencies
 	resolvedDependencies = append(resolvedDependencies, convertMaterialsToResolvedDependencies(mats, inputResultName)...)
 
 	// add task resources
-	mats = material.FromTaskResources(ctx, tro)
+	mats = material.FromTaskResources(ctx, s.Tro)
 	// convert materials to resolved dependencies
 	resolvedDependencies = append(resolvedDependencies, convertMaterialsToResolvedDependencies(mats, pipelineResourceName)...)
 
@@ -88,14 +90,24 @@ func TaskRun(ctx context.Context, tro *objects.TaskRunObject) ([]v1.ResourceDesc
 	return resolvedDependencies, nil
 }
 
+func (t TektonTaskBuildType) ResolvedDependencies(ctx context.Context) ([]v1.ResourceDescriptor, error) {
+	var err error
+	var resolvedDependencies []v1.ResourceDescriptor
+
+	return resolvedDependencies, err
+}
+
+// fromPipelineTask adds the resolved dependencies from pipeline tasks
+// such as pipeline task uri/digest for remote pipeline tasks and)
+
 // PipelineRun constructs `predicate.resolvedDependencies` section by collecting all the artifacts that influence a pipeline run such as source code repo and step&sidecar base images.
-func PipelineRun(ctx context.Context, pro *objects.PipelineRunObject) ([]v1.ResourceDescriptor, error) {
+func (s SLSAPipelineBuildType) ResolvedDependencies(ctx context.Context) ([]v1.ResourceDescriptor, error) {
 	var err error
 	var resolvedDependencies []v1.ResourceDescriptor
 	logger := logging.FromContext(ctx)
 
 	// add pipeline config to resolved dependencies
-	if p := pro.Status.Provenance; p != nil && p.RefSource != nil {
+	if p := s.Pro.Status.Provenance; p != nil && p.RefSource != nil {
 		rd := v1.ResourceDescriptor{
 			Name:   pipelineConfigName,
 			URI:    p.RefSource.URI,
@@ -105,14 +117,14 @@ func PipelineRun(ctx context.Context, pro *objects.PipelineRunObject) ([]v1.Reso
 	}
 
 	// add resolved dependencies from pipeline tasks
-	rds, err := fromPipelineTask(logger, pro)
+	rds, err := fromPipelineTask(logger, s.Pro)
 	if err != nil {
 		return nil, err
 	}
 	resolvedDependencies = append(resolvedDependencies, rds...)
 
 	// add resolved dependencies from pipeline results
-	mats := material.FromPipelineParamsAndResults(ctx, pro)
+	mats := material.FromPipelineParamsAndResults(ctx, s.Pro)
 	// convert materials to resolved dependencies
 	resolvedDependencies = append(resolvedDependencies, convertMaterialsToResolvedDependencies(mats, inputResultName)...)
 
@@ -122,6 +134,49 @@ func PipelineRun(ctx context.Context, pro *objects.PipelineRunObject) ([]v1.Reso
 		return nil, err
 	}
 	return resolvedDependencies, nil
+}
+
+func (t TektonPipelineBuildType) ResolvedDependencies(ctx context.Context) ([]v1.ResourceDescriptor, error) {
+	var err error
+	var resolvedDependencies []v1.ResourceDescriptor
+
+	// add pipeline config to resolved dependencies
+	if p := t.Pro.Status.Provenance; p != nil && p.RefSource != nil {
+		rd := v1.ResourceDescriptor{
+			Name:   pipelineConfigName,
+			URI:    p.RefSource.URI,
+			Digest: p.RefSource.Digest,
+		}
+		resolvedDependencies = append(resolvedDependencies, rd)
+	}
+
+	// add all taskRuns and their contents
+	for _, cr := range t.Pro.Status.ChildReferences {
+		tr := t.Pro.GetTaskRunFromTask(cr.PipelineTaskName)
+		if tr.Status.CompletionTime == nil {
+			continue
+		}
+		buf := bytes.Buffer{}
+		enc := gob.NewEncoder(&buf)
+		err := enc.Encode(tr)
+		if err != nil {
+			continue
+		}
+		// add remote task configsource information in materials
+		var rd v1.ResourceDescriptor
+		if tr.Status.Provenance != nil && tr.Status.Provenance.RefSource != nil {
+			rd.Name = pipelineTaskConfigName
+			rd.URI = tr.Status.Provenance.RefSource.URI
+			rd.Digest = tr.Status.Provenance.RefSource.Digest
+			rd.Content = buf.Bytes()
+		} else {
+			rd.Name = pipelineTaskConfigName
+			rd.Content = buf.Bytes()
+		}
+		resolvedDependencies = append(resolvedDependencies, rd)
+	}
+
+	return resolvedDependencies, err
 }
 
 // convertMaterialToResolvedDependency converts a SLSAv0.2 Material to a resolved dependency

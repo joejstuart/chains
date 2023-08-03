@@ -33,6 +33,7 @@ type Config struct {
 	Signers      SignerConfigs
 	Builder      BuilderConfig
 	Transparency TransparencyConfig
+	BuildType    BuildType
 }
 
 // ArtifactConfigs contains the configuration for how to sign/store/format the signatures for each artifact type
@@ -67,6 +68,10 @@ type SignerConfigs struct {
 
 type BuilderConfig struct {
 	ID string
+}
+
+type BuildType struct {
+	Type string
 }
 
 type X509Signer struct {

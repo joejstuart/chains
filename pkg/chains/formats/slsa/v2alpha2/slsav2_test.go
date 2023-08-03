@@ -500,3 +500,19 @@ func TestPipelineRunCreatePayload1(t *testing.T) {
 		t.Errorf("Slsa.CreatePayload(): -want +got: %s", diff)
 	}
 }
+
+func TestPipelineRunWithTektonBuildType(t *testing.T) {
+
+}
+
+func TestTaskRunWithTektonBuildType(t *testing.T) {
+
+}
+
+func TestPipelineRunWithGenericBuildType(t *testing.T) {
+
+}
+
+func TestTaskRunWithGenericBuildType(t *testing.T) {
+
+}

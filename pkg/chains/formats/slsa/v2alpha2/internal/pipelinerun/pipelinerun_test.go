@@ -28,7 +28,6 @@ import (
 
 	"github.com/tektoncd/chains/pkg/chains/objects"
 	"github.com/tektoncd/chains/pkg/internal/objectloader"
-	"github.com/tektoncd/pipeline/pkg/apis/config"
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	logtesting "knative.dev/pkg/logging/testing"
@@ -92,98 +91,6 @@ func TestMetadataInTimeZone(t *testing.T) {
 	got := metadata(objects.NewPipelineRunObject(pr))
 	if d := cmp.Diff(want, got); d != "" {
 		t.Fatalf("metadata (-want, +got):\n%s", d)
-	}
-}
-
-func TestExternalParameters(t *testing.T) {
-	pr := &v1beta1.PipelineRun{
-		Spec: v1beta1.PipelineRunSpec{
-			Params: v1beta1.Params{
-				{
-					Name:  "my-param",
-					Value: v1beta1.ResultValue{Type: "string", StringVal: "string-param"},
-				},
-				{
-					Name:  "my-array-param",
-					Value: v1beta1.ResultValue{Type: "array", ArrayVal: []string{"my", "array"}},
-				},
-				{
-					Name:  "my-empty-string-param",
-					Value: v1beta1.ResultValue{Type: "string"},
-				},
-				{
-					Name:  "my-empty-array-param",
-					Value: v1beta1.ResultValue{Type: "array", ArrayVal: []string{}},
-				},
-			},
-			PipelineRef: &v1beta1.PipelineRef{
-				ResolverRef: v1beta1.ResolverRef{
-					Resolver: "git",
-				},
-			},
-		},
-		Status: v1beta1.PipelineRunStatus{
-			PipelineRunStatusFields: v1beta1.PipelineRunStatusFields{
-				Provenance: &v1beta1.Provenance{
-					RefSource: &v1beta1.RefSource{
-						URI: "hello",
-						Digest: map[string]string{
-							"sha1": "abc123",
-						},
-						EntryPoint: "pipeline.yaml",
-					},
-				},
-			},
-		},
-	}
-
-	want := map[string]any{
-		"buildConfigSource": map[string]string{
-			"path":       "pipeline.yaml",
-			"ref":        "sha1:abc123",
-			"repository": "hello",
-		},
-		"runSpec": pr.Spec,
-	}
-	got := externalParameters(objects.NewPipelineRunObject(pr))
-	if d := cmp.Diff(want, got); d != "" {
-		t.Fatalf("externalParameters (-want, +got):\n%s", d)
-	}
-}
-
-func TestInternalParameters(t *testing.T) {
-	pr := &v1beta1.PipelineRun{
-		Status: v1beta1.PipelineRunStatus{
-			PipelineRunStatusFields: v1beta1.PipelineRunStatusFields{
-				Provenance: &v1beta1.Provenance{
-					FeatureFlags: &config.FeatureFlags{
-						RunningInEnvWithInjectedSidecars: true,
-						EnableAPIFields:                  "stable",
-						AwaitSidecarReadiness:            true,
-						VerificationNoMatchPolicy:        "skip",
-						EnableProvenanceInStatus:         true,
-						ResultExtractionMethod:           "termination-message",
-						MaxResultSize:                    4096,
-					},
-				},
-			},
-		},
-	}
-
-	want := map[string]any{
-		"tekton-pipelines-feature-flags": config.FeatureFlags{
-			RunningInEnvWithInjectedSidecars: true,
-			EnableAPIFields:                  "stable",
-			AwaitSidecarReadiness:            true,
-			VerificationNoMatchPolicy:        "skip",
-			EnableProvenanceInStatus:         true,
-			ResultExtractionMethod:           "termination-message",
-			MaxResultSize:                    4096,
-		},
-	}
-	got := internalParameters(objects.NewPipelineRunObject(pr))
-	if d := cmp.Diff(want, got); d != "" {
-		t.Fatalf("internalParameters (-want, +got):\n%s", d)
 	}
 }
 
@@ -349,7 +256,7 @@ func TestGenerateAttestation(t *testing.T) {
 		},
 	}
 
-	got, err := GenerateAttestation(ctx, "test_builder-1", pr)
+	got, err := GenerateAttestation(ctx, "test_builder-1", pr, "https://tekton.dev/chains/v2/slsa")
 
 	if err != nil {
 		t.Errorf("unwant error: %s", err.Error())
