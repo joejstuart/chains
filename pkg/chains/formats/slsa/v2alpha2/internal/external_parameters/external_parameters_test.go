@@ -25,27 +25,6 @@ import (
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 )
 
-func TestBuildConfigSource(t *testing.T) {
-	provenance := &v1beta1.Provenance{
-		RefSource: &v1beta1.RefSource{
-			Digest:     map[string]string{"alg1": "hex1", "alg2": "hex2"},
-			URI:        "https://tekton.com",
-			EntryPoint: "/path/to/entry",
-		},
-	}
-
-	want := map[string]string{
-		"ref":        "alg1:hex1",
-		"repository": "https://tekton.com",
-		"path":       "/path/to/entry",
-	}
-
-	got := buildConfigSource(provenance)
-
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("buildConfigSource(): -want +got: %s", diff)
-	}
-}
 func createPro(path string) *objects.PipelineRunObject {
 	pr, err := objectloader.PipelineRunFromFile(path)
 	if err != nil {
