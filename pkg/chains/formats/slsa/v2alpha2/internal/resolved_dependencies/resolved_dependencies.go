@@ -25,6 +25,7 @@ import (
 	"github.com/tektoncd/chains/pkg/chains/formats/slsa/internal/material"
 	"github.com/tektoncd/chains/pkg/chains/formats/slsa/internal/slsaconfig"
 	"github.com/tektoncd/chains/pkg/chains/objects"
+	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	"go.uber.org/zap"
 	"knative.dev/pkg/logging"
 )
@@ -44,11 +45,11 @@ const (
 
 // used to toggle the fields in resolvedDependencies. see AddTektonTaskDescriptor
 // and AddSLSATaskDescriptor
-type addTaskDescriptorContent func(*objects.TaskRunObject) (*v1.ResourceDescriptor, error) //nolint:staticcheck
+type addTaskDescriptorContent func(*objects.TaskRunObject, v1beta1.PipelineTask) (*v1.ResourceDescriptor, error) //nolint:staticcheck
 
 // the more verbose resolved dependency content. this adds the name, uri, digest
 // and content if possible.
-func AddTektonTaskDescriptor(tr *objects.TaskRunObject) (*v1.ResourceDescriptor, error) { //nolint:staticcheck
+func AddTektonTaskDescriptor(tr *objects.TaskRunObject, pt v1beta1.PipelineTask) (*v1.ResourceDescriptor, error) { //nolint:staticcheck
 	rd := v1.ResourceDescriptor{}
 	storedTr, err := json.Marshal(tr)
 	if err != nil {
@@ -57,6 +58,7 @@ func AddTektonTaskDescriptor(tr *objects.TaskRunObject) (*v1.ResourceDescriptor,
 
 	rd.Name = pipelineTaskConfigName
 	rd.Content = storedTr
+	rd.Annotations = map[string]interface{}{"pipelineTask": pt}
 	if tr.Status.Provenance != nil && tr.Status.Provenance.RefSource != nil {
 		rd.URI = tr.Status.Provenance.RefSource.URI
 		rd.Digest = tr.Status.Provenance.RefSource.Digest
@@ -67,7 +69,7 @@ func AddTektonTaskDescriptor(tr *objects.TaskRunObject) (*v1.ResourceDescriptor,
 
 // resolved dependency content for the more generic slsa verifiers. just logs
 // the name, uri and digest.
-func AddSLSATaskDescriptor(tr *objects.TaskRunObject) (*v1.ResourceDescriptor, error) { //nolint:staticcheck
+func AddSLSATaskDescriptor(tr *objects.TaskRunObject, pt v1beta1.PipelineTask) (*v1.ResourceDescriptor, error) { //nolint:staticcheck
 	if tr.Status.Provenance != nil && tr.Status.Provenance.RefSource != nil {
 		return &v1.ResourceDescriptor{
 			Name:   pipelineTaskConfigName,
@@ -143,7 +145,7 @@ func fromPipelineTask(logger *zap.SugaredLogger, pro *objects.PipelineRunObject,
 				logger.Infof("taskrun status not found for task %s", t.Name)
 				continue
 			}
-			rd, err := addTasks(tr)
+			rd, err := addTasks(tr, t)
 			if err != nil {
 				logger.Errorf("error storing taskRun %s, error: %s", t.Name, err)
 				continue

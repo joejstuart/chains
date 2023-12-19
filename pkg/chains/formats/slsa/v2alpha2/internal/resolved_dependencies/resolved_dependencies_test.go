@@ -513,6 +513,10 @@ func TestTaskRun(t *testing.T) {
 }
 
 func TestPipelineRun(t *testing.T) {
+	pipelineTasks := map[string]v1beta1.PipelineTask{}
+	for _, task := range pro.Status.PipelineSpec.Tasks {
+		pipelineTasks[task.Name] = task
+	}
 	taskRuns := tektonTaskRuns()
 	tests := []struct {
 		name           string
@@ -524,12 +528,20 @@ func TestPipelineRun(t *testing.T) {
 			taskDescriptor: AddSLSATaskDescriptor,
 			want: []v1slsa.ResourceDescriptor{
 				{Name: "pipeline", URI: "git+https://github.com/test", Digest: common.DigestSet{"sha1": "28b123"}},
-				{Name: "pipelineTask", URI: "git+https://github.com/catalog", Digest: common.DigestSet{"sha1": "x123"}},
+				{
+					Name:   "pipelineTask",
+					URI:    "git+https://github.com/catalog",
+					Digest: common.DigestSet{"sha1": "x123"},
+				},
 				{
 					URI:    "oci://gcr.io/test1/test1",
 					Digest: common.DigestSet{"sha256": "d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6"},
 				},
-				{Name: "pipelineTask", URI: "git+https://github.com/test", Digest: common.DigestSet{"sha1": "ab123"}},
+				{
+					Name:   "pipelineTask",
+					URI:    "git+https://github.com/test",
+					Digest: common.DigestSet{"sha1": "ab123"},
+				},
 				{
 					URI:    "oci://gcr.io/test2/test2",
 					Digest: common.DigestSet{"sha256": "4d6dd704ef58cb214dd826519929e92a978a57cdee43693006139c0080fd6fac"},
@@ -547,12 +559,28 @@ func TestPipelineRun(t *testing.T) {
 			taskDescriptor: AddTektonTaskDescriptor,
 			want: []v1slsa.ResourceDescriptor{
 				{Name: "pipeline", URI: "git+https://github.com/test", Digest: common.DigestSet{"sha1": "28b123"}},
-				{Name: "pipelineTask", URI: "git+https://github.com/catalog", Digest: common.DigestSet{"sha1": "x123"}, Content: taskRuns["git-clone"]},
+				{
+					Name:    "pipelineTask",
+					URI:     "git+https://github.com/catalog",
+					Digest:  common.DigestSet{"sha1": "x123"},
+					Content: taskRuns["git-clone"],
+					Annotations: map[string]interface{}{
+						"pipelineTask": pipelineTasks["git-clone"],
+					},
+				},
 				{
 					URI:    "oci://gcr.io/test1/test1",
 					Digest: common.DigestSet{"sha256": "d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6"},
 				},
-				{Name: "pipelineTask", URI: "git+https://github.com/test", Digest: common.DigestSet{"sha1": "ab123"}, Content: taskRuns["taskrun-build"]},
+				{
+					Name:    "pipelineTask",
+					URI:     "git+https://github.com/test",
+					Digest:  common.DigestSet{"sha1": "ab123"},
+					Content: taskRuns["taskrun-build"],
+					Annotations: map[string]interface{}{
+						"pipelineTask": pipelineTasks["build"],
+					},
+				},
 				{
 					URI:    "oci://gcr.io/test2/test2",
 					Digest: common.DigestSet{"sha256": "4d6dd704ef58cb214dd826519929e92a978a57cdee43693006139c0080fd6fac"},
@@ -582,14 +610,24 @@ func TestPipelineRun(t *testing.T) {
 }
 
 func TestPipelineRunStructuredResult(t *testing.T) {
+	pipelineTasks := map[string]v1beta1.PipelineTask{}
+	for _, task := range pro.Status.PipelineSpec.Tasks {
+		pipelineTasks[task.Name] = task
+	}
 	want := []v1slsa.ResourceDescriptor{
 		{Name: "pipeline", URI: "git+https://github.com/test", Digest: common.DigestSet{"sha1": "28b123"}},
-		{Name: "pipelineTask", URI: "git+https://github.com/catalog", Digest: common.DigestSet{"sha1": "x123"}},
+		{
+			Name:   "pipelineTask",
+			URI:    "git+https://github.com/catalog",
+			Digest: common.DigestSet{"sha1": "x123"},
+		},
 		{
 			URI:    "oci://gcr.io/test1/test1",
 			Digest: common.DigestSet{"sha256": "d4b63d3e24d6eef04a6dc0795cf8a73470688803d97c52cffa3c8d4efd3397b6"},
 		},
-		{Name: "pipelineTask", URI: "git+https://github.com/test", Digest: common.DigestSet{"sha1": "ab123"}},
+		{
+			Name: "pipelineTask", URI: "git+https://github.com/test", Digest: common.DigestSet{"sha1": "ab123"},
+		},
 		{
 			URI:    "oci://gcr.io/test2/test2",
 			Digest: common.DigestSet{"sha256": "4d6dd704ef58cb214dd826519929e92a978a57cdee43693006139c0080fd6fac"},
